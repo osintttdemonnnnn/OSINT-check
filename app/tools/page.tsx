@@ -1,40 +1,4 @@
 "use client";
-import { useState } from 'react';
-export default function Tools() {
- const [domain,setDomain]=useState('');
- const [id,setId]=useState('');
- const [result,setResult]=useState<unknown>(null);
- const [error,setError]=useState('');
- const [busy,setBusy]=useState(false);
- const [recordType,setRecordType]=useState('A');
- async function dns(e: React.FormEvent) {
-  e.preventDefault(); setError(''); setResult(null);
-  const name=domain.trim().toLowerCase().replace(/\.$/,'');
-  if(name.length>253 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(name)) {setError('Enter a domain such as example.com, not a URL.');return;}
-  setBusy(true);
-  try {
-   const response=await fetch('https://dns.google/resolve?'+new URLSearchParams({name,type:recordType}),{signal:AbortSignal.timeout(10000)});
-   if(!response.ok) throw new Error();
-   const data=await response.json();
-   setResult({tool:'Public DNS',domain:name,recordType,checkedAt:new Date().toISOString(),resolver:'Google Public DNS',status:data.Status,answers:Array.isArray(data.Answer)?data.Answer:[],note:'The queried domain is sent to Google Public DNS. DNS records do not establish ownership or identity.'});
-  } catch {setError('DNS request failed or timed out. No result can be inferred.');}
-  finally {setBusy(false);}
- }
- function decode(e: React.FormEvent) {
-  e.preventDefault();setError('');setResult(null);
-  try {
-   if(!/^\d{17,20}$/.test(id.trim())) throw new Error();
-   const n=BigInt(id.trim());
-   if(n>BigInt('18446744073709551615')) throw new Error();
-   const timestamp=Number(n>>BigInt(22))+1420070400000;
-   if(timestamp>Date.now()) throw new Error();
-   setResult({tool:'Local Discord snowflake decoder',id:id.trim(),encodedTimestamp:new Date(timestamp).toISOString(),note:'Decoded locally. Does not verify an account exists or reveal private information. Other Discord objects also use snowflake IDs.'});
-  } catch {setError('Invalid or future-dated Discord snowflake.');}
- }
- function download() {
-  if(!result)return;
-  const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));
-  const a=document.createElement('a');a.href=url;a.download='security-check.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
- }
- return <main className="workspace" style={{margin:'0 auto'}}><header><a href="/">← Exposure dashboard</a><span className="badge">PUBLIC / LOCAL TOOLS</span></header><h1>Security utilities.</h1><p className="muted">Public infrastructure checks and local identifier inspection. No private databases or credential retrieval.</p><section className="panel"><h2>Public DNS lookup</h2><p className="muted">The domain you enter is sent to Google Public DNS.</p><form onSubmit={dns}><label>Record type<select value={recordType} onChange={e=>setRecordType(e.target.value)}>{['A','AAAA','MX','TXT','NS','CNAME','CAA'].map(t=><option key={t}>{t}</option>)}</select></label><label>Domain<input required value={domain} onChange={e=>setDomain(e.target.value)} placeholder="example.com"/></label><button disabled={busy}>{busy?'Checking…':'Query DNS'}</button></form></section><section className="panel"><h2>Discord ID decoder</h2><p className="muted">Decode an embedded timestamp locally. This is not a profile or breach lookup.</p><form onSubmit={decode}><label>Mode<input readOnly value="Local only"/></label><label>Snowflake ID<input required maxLength={20} inputMode="numeric" value={id} onChange={e=>setId(e.target.value)}/></label><button>Decode ID</button></form></section><section className="panel" aria-live="polite"><h2>Results</h2>{error&&<p role="alert">{error}</p>}{result!==null?<><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',fontSize:13}}>{JSON.stringify(result,null,2)}</pre><button onClick={download}>Export this result as JSON</button></>:<p className="muted">Run a check to see actual results. No sample matches are generated.</p>}</section></main>;
-}
+import {useState} from 'react';
+function Fields({value}:{value:unknown}){if(Array.isArray(value))return value.length?<ul>{value.map((v,i)=><li key={i}><Fields value={v}/></li>)}</ul>:<span>No records returned</span>;if(value!==null&&typeof value==='object')return <dl>{Object.entries(value as Record<string,unknown>).map(([k,v])=><div key={k} style={{padding:'10px 0',borderBottom:'1px solid #354555'}}><dt style={{color:'#8de4ce'}}>{k}</dt><dd style={{margin:0,overflowWrap:'anywhere'}}><Fields value={v}/></dd></div>)}</dl>;return <span>{String(value??'Not returned')}</span>;}
+export default function Tools(){const [domain,setDomain]=useState(''),[id,setId]=useState(''),[type,setType]=useState('A'),[result,setResult]=useState<unknown>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);async function dns(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');setResult(null);const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12000);try{const response=await fetch('/api/dns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:domain,type}),signal:controller.signal});const data=await response.json();if(!response.ok)throw new Error(data.error||'DNS lookup failed');setResult(data);}catch(e){setError(e instanceof Error&&e.name==='AbortError'?'Lookup timed out. No conclusion can be drawn.':e instanceof Error?e.message:'Lookup failed');}finally{clearTimeout(timer);setBusy(false);}}function decode(e:React.FormEvent){e.preventDefault();setError('');setResult(null);try{const text=id.trim();if(!/^[0-9]{17,20}$/.test(text))throw new Error();const n=BigInt(text);if(n>BigInt('18446744073709551615'))throw new Error();const timestamp=Number(n>>BigInt(22))+1420070400000;if(timestamp>Date.now())throw new Error();setResult({tool:'Discord snowflake timestamp',id:text,encodedTimestamp:new Date(timestamp).toISOString(),retrievedAt:new Date().toISOString(),source:'Local browser decoding',limitations:'Does not verify existence, identify a person, or retrieve a profile. Discord objects other than users also have snowflakes.'});}catch{setError('Enter a valid 17–20 digit Discord snowflake with a non-future timestamp.');}}function download(){if(result===null)return;const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='research-result.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}return <main className="workspace" style={{maxWidth:1000,margin:'auto',padding:'24px 16px',minWidth:0}}><h1>Research utilities.</h1><p>Actual DNS responses and local timestamp decoding. No identity verdicts.</p><section className="panel"><h2>DNS lookup</h2><p>Server-side lookup using Google Public DNS. Your domain is sent to that resolver.</p><form onSubmit={dns} style={{display:'grid',gap:14}}><label>Record type<select value={type} onChange={e=>setType(e.target.value)} style={{width:'100%',fontSize:16,minHeight:48}}>{['A','AAAA','MX','TXT','NS','CNAME','CAA'].map(t=><option key={t}>{t}</option>)}</select></label><label>Domain<input required maxLength={254} autoCapitalize="none" spellCheck={false} value={domain} onChange={e=>setDomain(e.target.value)} placeholder="example.com" style={{width:'100%',fontSize:16,minHeight:48}}/></label><button disabled={busy} style={{minHeight:48}}>{busy?'Checking…':'Query DNS'}</button></form></section><section className="panel"><h2>Discord ID decoder</h2><form onSubmit={decode} style={{display:'grid',gap:14}}><label>Snowflake ID<input required maxLength={20} inputMode="numeric" value={id} onChange={e=>setId(e.target.value)} style={{width:'100%',fontSize:16,minHeight:48}}/></label><button disabled={busy} style={{minHeight:48}}>Decode locally</button></form></section><section className="panel" aria-live="polite" aria-busy={busy}><h2>Results</h2>{error&&<p role="alert" style={{color:'#ffb4b4'}}>{error}</p>}{result!==null?<><Fields value={result}/><button onClick={download} style={{minHeight:48,marginTop:16}}>Export result JSON</button><details><summary>Raw response</summary><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(result,null,2)}</pre></details></>:<p>Run a check to see a result. No sample matches are generated.</p>}</section></main>;}
